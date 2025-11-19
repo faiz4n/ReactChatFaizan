@@ -5,8 +5,14 @@ import { useUserStore } from "../../lib/userStore";
 import "./detail.css";
 
 const Detail = () => {
-  const { chatId, user, isCurrentUserBlocked, isReceiverBlocked, changeBlock, resetChat } =
-    useChatStore();
+  const {
+    chatId,
+    user,
+    isCurrentUserBlocked,
+    isReceiverBlocked,
+    changeBlock,
+    resetChat,
+  } = useChatStore();
   const { currentUser } = useUserStore();
 
   const handleBlock = async () => {
@@ -26,7 +32,7 @@ const Detail = () => {
 
   const handleLogout = () => {
     auth.signOut();
-    resetChat()
+    resetChat();
   };
 
   return (
@@ -34,10 +40,10 @@ const Detail = () => {
       <div className="user">
         <img src={user?.avatar || "./avatar.png"} alt="" />
         <h2>{user?.username}</h2>
-        <p>Lorem ipsum dolor sit amet.</p>
+        {/* <p>Lorem ipsum dolor sit amet.</p> */}
       </div>
       <div className="info">
-        <div className="option">
+        {/* <div className="option">
           <div className="title">
             <span>Chat Settings</span>
             <img src="./arrowUp.png" alt="" />
@@ -102,20 +108,20 @@ const Detail = () => {
               <img src="./download.png" alt="" className="icon" />
             </div>
           </div>
-        </div>
-        <div className="option">
+        </div> */}
+        {/* <div className="option">
           <div className="title">
             <span>Shared Files</span>
             <img src="./arrowUp.png" alt="" />
           </div>
-        </div>
-        <button onClick={handleBlock}>
+        </div> */}
+        {/* <button onClick={handleBlock}>
           {isCurrentUserBlocked
             ? "You are Blocked!"
             : isReceiverBlocked
             ? "User blocked"
             : "Block User"}
-        </button>
+        </button> */}
         <button className="logout" onClick={handleLogout}>
           Logout
         </button>
