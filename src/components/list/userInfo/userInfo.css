@@ -28,3 +28,28 @@
     }
   }
 }
+
+/* Mobile Responsive */
+@media (max-width: 768px) {
+  .userInfo {
+    padding: 15px;
+
+    .user {
+      gap: 15px;
+
+      img {
+        width: 45px;
+        height: 45px;
+      }
+    }
+
+    .icons {
+      gap: 15px;
+
+      img {
+        width: 18px;
+        height: 18px;
+      }
+    }
+  }
+}

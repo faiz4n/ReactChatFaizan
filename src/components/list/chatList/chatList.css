@@ -71,3 +71,55 @@
     }
   }
 }
+
+/* Mobile Responsive */
+@media (max-width: 768px) {
+  .chatList {
+    .search {
+      padding: 15px;
+      gap: 15px;
+
+      .searchBar {
+        padding: 8px;
+        gap: 10px;
+
+        input {
+          font-size: 14px;
+        }
+
+        img {
+          width: 18px;
+          height: 18px;
+        }
+      }
+
+      .add {
+        width: 32px;
+        height: 32px;
+        padding: 8px;
+      }
+    }
+
+    .item {
+      padding: 15px;
+      gap: 15px;
+
+      img {
+        width: 45px;
+        height: 45px;
+      }
+
+      .texts {
+        gap: 8px;
+
+        span {
+          font-size: 15px;
+        }
+
+        p {
+          font-size: 13px;
+        }
+      }
+    }
+  }
+}

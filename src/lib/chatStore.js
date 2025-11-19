@@ -13,7 +13,7 @@ export const useChatStore = create((set) => ({
     if (user.blocked.includes(currentUser.id)) {
       return set({
         chatId,
-        user: null,
+        user: user, // Keep user object so listener can continue working
         isCurrentUserBlocked: true,
         isReceiverBlocked: false,
       });

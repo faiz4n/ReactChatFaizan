@@ -11,9 +11,10 @@ const Detail = () => {
     isCurrentUserBlocked,
     isReceiverBlocked,
     changeBlock,
+    changeChat,
     resetChat,
   } = useChatStore();
-  const { currentUser } = useUserStore();
+  const { currentUser, fetchUserInfo } = useUserStore();
 
   const handleBlock = async () => {
     if (!user) return;
@@ -24,7 +25,13 @@ const Detail = () => {
       await updateDoc(userDocRef, {
         blocked: isReceiverBlocked ? arrayRemove(user.id) : arrayUnion(user.id),
       });
-      changeBlock();
+      
+      // Refresh currentUser to get updated blocked array
+      await fetchUserInfo(currentUser.id);
+      
+      // Re-check block status with updated currentUser
+      // changeChat will properly set isReceiverBlocked based on updated currentUser.blocked
+      changeChat(chatId, user);
     } catch (err) {
       console.log(err);
     }
@@ -35,8 +42,20 @@ const Detail = () => {
     resetChat();
   };
 
+  const handleCloseDetail = () => {
+    const detailPanel = document.querySelector('.detail');
+    if (detailPanel) {
+      detailPanel.classList.remove('mobile-visible');
+    }
+  };
+
   return (
     <div className="detail">
+      <button className="close-detail-button" onClick={handleCloseDetail} aria-label="Close">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M18 6L6 18M6 6l12 12"/>
+        </svg>
+      </button>
       <div className="user">
         <img src={user?.avatar || "./avatar.png"} alt="" />
         <h2>{user?.username}</h2>
@@ -115,13 +134,13 @@ const Detail = () => {
             <img src="./arrowUp.png" alt="" />
           </div>
         </div> */}
-        {/* <button onClick={handleBlock}>
+        <button onClick={handleBlock}>
           {isCurrentUserBlocked
             ? "You are Blocked!"
             : isReceiverBlocked
-            ? "User blocked"
+            ? "Unblock User"
             : "Block User"}
-        </button> */}
+        </button>
         <button className="logout" onClick={handleLogout}>
           Logout
         </button>

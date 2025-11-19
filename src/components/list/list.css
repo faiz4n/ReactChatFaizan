@@ -3,3 +3,18 @@
   display: flex;
   flex-direction: column;
 }
+
+/* Mobile Responsive */
+@media (max-width: 768px) {
+  .list {
+    width: 100%;
+    
+    &.mobile-hidden {
+      display: none;
+    }
+
+    &.mobile-visible {
+      display: flex;
+    }
+  }
+}

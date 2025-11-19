@@ -29,8 +29,8 @@ const App = () => {
     <div className="container">
       {currentUser ? (
         <>
-          <List />
-          {chatId && <Chat />}
+          <List className={chatId ? "mobile-hidden" : "mobile-visible"} />
+          {chatId && <Chat className="mobile-visible" />}
           {chatId && <Detail />}
         </>
       ) : (

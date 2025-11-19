@@ -69,3 +69,43 @@
     background-color: #dddddd35;
   }
 }
+
+/* Mobile Responsive */
+@media (max-width: 768px) {
+  .login {
+    flex-direction: column;
+    gap: 40px;
+    padding: 20px;
+    overflow-y: auto;
+
+    .item {
+      width: 100%;
+
+      form {
+        width: 100%;
+
+        input {
+          padding: 15px;
+          font-size: 16px; /* Prevents zoom on iOS */
+        }
+
+        button {
+          padding: 15px;
+          font-size: 16px;
+        }
+
+        label {
+          img {
+            width: 40px;
+            height: 40px;
+          }
+        }
+      }
+    }
+
+    .separator {
+      height: 2px;
+      width: 80%;
+    }
+  }
+}
