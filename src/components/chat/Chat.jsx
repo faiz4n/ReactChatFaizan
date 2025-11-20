@@ -525,6 +525,47 @@ const Chat = () => {
     return format(lastSeenDate);
   };
 
+  // Helper to update lastMessage in userchats after deletion
+  const updateLastMessageAfterDelete = async (updatedMessages) => {
+    const ids = [currentUser.id, user.id];
+    
+    await Promise.all(
+      ids.map(async (id) => {
+        try {
+          const ref = doc(db, "userchats", id);
+          const snap = await getDoc(ref);
+
+          if (snap.exists()) {
+            const data = snap.data();
+            const i = data.chats.findIndex((c) => c.chatId === chatId);
+
+            if (i !== -1) {
+              // Find the last message that is not deleted for this user
+              const visibleMessages = updatedMessages.filter(
+                (msg) => !msg.deletedFor?.includes(id)
+              );
+
+              if (visibleMessages.length > 0) {
+                const lastMsg = visibleMessages[visibleMessages.length - 1];
+                data.chats[i].lastMessage = lastMsg.text || lastMsg.file?.name || "File";
+                data.chats[i].updatedAt = Date.now();
+              } else {
+                // No messages left
+                data.chats[i].lastMessage = "No messages yet";
+                data.chats[i].updatedAt = Date.now();
+              }
+
+              await updateDoc(ref, { chats: data.chats });
+              console.log(`✅ Updated lastMessage after delete for user: ${id}`);
+            }
+          }
+        } catch (err) {
+          console.error(`❌ Error updating userchats for ${id}:`, err);
+        }
+      })
+    );
+  };
+
   // Delete message handler
   const handleDeleteMessage = async (
     messageIndex,
@@ -542,21 +583,21 @@ const Chat = () => {
       const messages = chatSnap.data().messages || [];
       const message = messages[messageIndex];
 
-      // Check if user can delete (must be sender or delete for everyone)
-      if (message.senderId !== currentUser.id && !deleteForEveryone) {
-        alert("You can only delete your own messages");
+      // Check if user can delete (must be sender for delete for everyone)
+      if (deleteForEveryone && message.senderId !== currentUser.id) {
+        alert("You can only delete your own messages for everyone");
         return;
       }
 
+      let updatedMessages;
+
       if (deleteForEveryone && message.senderId === currentUser.id) {
         // Delete for everyone - remove from messages array
-        const updatedMessages = messages.filter(
-          (_, idx) => idx !== messageIndex
-        );
+        updatedMessages = messages.filter((_, idx) => idx !== messageIndex);
         await updateDoc(chatRef, { messages: updatedMessages });
       } else {
         // Delete for me - add to deletedFor array
-        const updatedMessages = messages.map((msg, idx) => {
+        updatedMessages = messages.map((msg, idx) => {
           if (idx === messageIndex) {
             return {
               ...msg,
@@ -567,6 +608,9 @@ const Chat = () => {
         });
         await updateDoc(chatRef, { messages: updatedMessages });
       }
+
+      // Update lastMessage in userchats for both users
+      await updateLastMessageAfterDelete(updatedMessages);
 
       setShowMessageMenu(null);
     } catch (err) {
