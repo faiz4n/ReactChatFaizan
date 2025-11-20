@@ -48,6 +48,7 @@ const upload = async (file) => {
             name: file.name,
             type: file.type || "application/octet-stream",
             size: file.size,
+            path: storagePath,
           };
 
           console.log("✅ [upload.js] File uploaded successfully:", result);
