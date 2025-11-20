@@ -131,7 +131,7 @@ const ChatList = () => {
               src={
                 chat.user.blocked.includes(currentUser.id)
                   ? "./avatar.png"
-                  : chat.user.avatar || "./avatar.png"
+                  : chat.user.avatar.url || "./avatar.png"
               }
               alt=""
             />

@@ -79,10 +79,17 @@ const Chat = () => {
       />
 
       <div className="center">
+        {console.log("🔍 Current user data:", {
+          userId: user?.id,
+          userName: user?.username,
+          userPhoto: user?.photo,
+          userAvatar: user?.avatar,
+        })}
         <MessageList
           messages={visibleMessages}
           currentUserId={currentUser?.id}
           otherUserId={user?.id}
+          otherUserAvatar={user?.avatar?.url}
           showMessageMenu={showMessageMenu}
           menuConfig={messageMenuConfig}
           onMenuOpen={handleMenuOpen}

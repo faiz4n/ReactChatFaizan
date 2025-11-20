@@ -18,7 +18,7 @@ const ChatHeader = ({ user, receiverStatus, isTyping, onBack }) => (
         </svg>
       </button>
 
-      <img src={user?.avatar || "./avatar.png"} alt="" />
+      <img src={user?.avatar?.url || "./avatar.png"} alt="" />
       <div className="texts">
         <span>{user?.username}</span>
         <p>
@@ -50,11 +50,13 @@ ChatHeader.propTypes = {
   user: PropTypes.object,
   receiverStatus: PropTypes.shape({
     isOnline: PropTypes.bool,
-    lastSeen: PropTypes.oneOfType([PropTypes.object, PropTypes.instanceOf(Date)]),
+    lastSeen: PropTypes.oneOfType([
+      PropTypes.object,
+      PropTypes.instanceOf(Date),
+    ]),
   }).isRequired,
   isTyping: PropTypes.bool.isRequired,
   onBack: PropTypes.func.isRequired,
 };
 
 export default ChatHeader;
-

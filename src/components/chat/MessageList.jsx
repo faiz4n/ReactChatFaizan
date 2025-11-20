@@ -206,9 +206,7 @@ const MessageList = ({
             <div
               className={`message-menu ${
                 menuConfig.placement === "below" ? "menu-below" : "menu-above"
-              } ${
-                menuConfig.align === "left" ? "align-left" : "align-right"
-              }`}
+              } ${menuConfig.align === "left" ? "align-left" : "align-right"}`}
               ref={messageMenuRef}
               onClick={(event) => event.stopPropagation()}
             >
@@ -274,4 +272,3 @@ MessageList.propTypes = {
 };
 
 export default MessageList;
-
