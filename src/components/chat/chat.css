@@ -77,6 +77,11 @@
       img {
         width: 20px;
         height: 20px;
+        cursor: pointer;
+      }
+
+      .info-icon {
+        display: none; /* Hidden on desktop by default */
       }
     }
   }
@@ -104,6 +109,98 @@
           p {
             background-color: #5183fe;
           }
+
+          .file-download,
+          .file-preview {
+            background-color: rgba(81, 131, 254, 0.3);
+          }
+
+          .file-download:hover {
+            background-color: rgba(81, 131, 254, 0.5);
+          }
+        }
+      }
+
+      .message-menu {
+        position: absolute;
+        bottom: calc(100% + 6px);
+        right: 0;
+        background: transparent;
+        border: 1px solid rgba(148, 163, 184, 0.4);
+        border-radius: 12px;
+        padding: 8px;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        min-width: 190px;
+        box-shadow: 0 12px 30px rgba(0, 0, 0, 0.55);
+        z-index: 1000;
+        animation: slideDown 0.18s ease-out;
+        backdrop-filter: blur(12px);
+      }
+
+      .message.own .message-menu {
+        left: 0;
+        right: auto;
+      }
+
+      .message-menu-item {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 10px 16px;
+        cursor: pointer;
+        border-radius: 10px;
+        color: #e5e7eb;
+        transition: background-color 0.18s ease, transform 0.12s ease;
+        font-size: 13px;
+        letter-spacing: 0.01em;
+
+        svg {
+          flex-shrink: 0;
+          width: 18px;
+          height: 18px;
+          opacity: 0.85;
+        }
+
+        span {
+          font-weight: 500;
+          white-space: nowrap;
+        }
+
+        &:hover {
+          background-color: rgba(148, 163, 184, 0.2);
+          transform: translateY(-1px);
+
+          svg {
+            opacity: 1;
+          }
+        }
+      }
+
+      .message-menu-item.delete-everyone {
+        color: #fecaca;
+
+        svg {
+          color: #f87171;
+        }
+
+        &:hover {
+          background-color: rgba(248, 113, 113, 0.18);
+          color: #fee2e2;
+        }
+      }
+
+      .message-menu-item.delete-me {
+        color: #9ca3af;
+
+        svg {
+          color: #9ca3af;
+        }
+
+        &:hover {
+          background-color: rgba(148, 163, 184, 0.18);
+          color: #e5e7eb;
         }
       }
 
@@ -134,6 +231,84 @@
 
         span {
           font-size: 13px;
+        }
+
+        .message-footer {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          margin-top: 4px;
+        }
+
+        .message-status {
+          display: flex;
+          align-items: center;
+          color: #a5a5a5;
+          margin-left: auto;
+
+          svg {
+            width: 16px;
+            height: 16px;
+          }
+        }
+
+        .message.own .texts .message-status {
+          color: #5183fe;
+        }
+
+        .file-download,
+        .file-preview {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          padding: 12px 16px;
+          background-color: rgba(17, 25, 40, 0.3);
+          border-radius: 10px;
+          text-decoration: none;
+          color: white;
+          transition: background-color 0.2s;
+          max-width: 100%;
+          word-break: break-word;
+        }
+
+        .file-download {
+          cursor: pointer;
+
+          &:hover {
+            background-color: rgba(17, 25, 40, 0.5);
+          }
+        }
+
+        .file-icon {
+          font-size: 18px;
+          flex-shrink: 0;
+        }
+
+        .file-name {
+          font-size: 14px;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+
+        .uploading-indicator {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          padding: 12px 16px;
+          background-color: rgba(17, 25, 40, 0.3);
+          border-radius: 10px;
+          color: #a5a5a5;
+          font-size: 14px;
+          font-style: italic;
+        }
+
+        .message.own .texts .uploading-indicator {
+          background-color: rgba(81, 131, 254, 0.3);
+        }
+
+        .message {
+          position: relative;
         }
 
         .typing-indicator {
@@ -183,7 +358,9 @@
   }
 
   @keyframes typingDots {
-    0%, 60%, 100% {
+    0%,
+    60%,
+    100% {
       transform: translateY(0);
       opacity: 0.4;
     }
@@ -205,12 +382,99 @@
     .icons {
       display: flex;
       gap: 20px;
+      position: relative;
     }
 
     img {
       width: 20px;
       height: 20px;
       cursor: pointer;
+    }
+
+    .file-menu-container {
+      position: relative;
+    }
+
+    .file-menu-trigger {
+      background: none;
+      border: none;
+      color: white;
+      cursor: pointer;
+      padding: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 50%;
+      transition: background-color 0.2s;
+      width: 40px;
+      height: 40px;
+
+      &:hover:not(:disabled) {
+        background-color: rgba(255, 255, 255, 0.1);
+      }
+
+      &:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+
+      svg {
+        width: 24px;
+        height: 24px;
+      }
+    }
+
+    .file-menu {
+      position: absolute;
+      bottom: 100%;
+      left: 0;
+      margin-bottom: 10px;
+      background-color: rgba(17, 25, 40, 0.95);
+      border: 1px solid #dddddd35;
+      border-radius: 10px;
+      padding: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      min-width: 150px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+      z-index: 1000;
+      animation: slideDown 0.2s ease-out;
+    }
+
+    @keyframes slideDown {
+      from {
+        opacity: 0;
+        transform: translateY(-10px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .file-menu-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 16px;
+      cursor: pointer;
+      border-radius: 8px;
+      color: white;
+      transition: background-color 0.2s;
+      font-size: 14px;
+
+      &:hover {
+        background-color: rgba(255, 255, 255, 0.1);
+      }
+
+      svg {
+        flex-shrink: 0;
+      }
+
+      span {
+        font-weight: 500;
+      }
     }
 
     input {
@@ -242,20 +506,20 @@
       }
     }
 
-      .sendButton {
-        background-color: #5183fe;
-        color: white;
-        padding: 10px 20px;
-        border: none;
-        border-radius: 5px;
-        cursor: pointer;
+    .sendButton {
+      background-color: #5183fe;
+      color: white;
+      padding: 10px 20px;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
 
-        &:disabled {
-          background-color: #5182feb4;
-          cursor: not-allowed;
-        }
+      &:disabled {
+        background-color: #5182feb4;
+        cursor: not-allowed;
       }
     }
+  }
 
   /* Mobile Responsive */
   @media (max-width: 768px) {
@@ -310,6 +574,10 @@
         img {
           width: 18px;
           height: 18px;
+        }
+
+        .info-icon {
+          display: block; /* Show on mobile */
         }
       }
     }
@@ -372,4 +640,77 @@
       }
     }
   }
+}
+
+.chat .center .message {
+  position: relative;
+}
+
+.chat .center .message .message-menu {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  right: 0;
+
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  border-radius: 12px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 190px;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.55);
+  z-index: 1000;
+  animation: slideDown 0.18s ease-out;
+  backdrop-filter: blur(12px);
+}
+
+.chat .center .message.own .message-menu {
+  left: 0;
+  right: auto;
+}
+
+.chat .center .message .message-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  cursor: pointer;
+  border-radius: 10px;
+  color: #e5e7eb;
+  transition: background-color 0.18s ease, transform 0.12s ease;
+  font-size: 13px;
+  letter-spacing: 0.01em;
+}
+
+.chat .center .message .message-menu-item svg {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  opacity: 0.85;
+}
+
+.chat .center .message .message-menu-item span {
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.chat .center .message .message-menu-item:hover {
+  background-color: rgba(148, 163, 184, 0.2);
+  transform: translateY(-1px);
+}
+
+.chat .center .message .message-menu-item.delete-everyone {
+  color: #fecaca;
+}
+
+.chat .center .message .message-menu-item.delete-everyone svg {
+  color: #f87171;
+}
+
+.chat .center .message .message-menu-item.delete-me {
+  color: #9ca3af;
+}
+
+.chat .center .message .message-menu-item.delete-me svg {
+  color: #9ca3af;
 }

@@ -18,366 +18,810 @@ const Chat = () => {
   const [chat, setChat] = useState();
   const [open, setOpen] = useState(false);
   const [text, setText] = useState("");
-  const [img, setImg] = useState({
+
+  // NEW unified file state (images + documents)
+  const [fileData, setFileData] = useState({
     file: null,
-    url: "",
+    previewUrl: "",
   });
+
+  const [isUploading, setIsUploading] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
+  const [showFileMenu, setShowFileMenu] = useState(false);
+  const [receiverStatus, setReceiverStatus] = useState({
+    isOnline: false,
+    lastSeen: null,
+  });
+  const [showMessageMenu, setShowMessageMenu] = useState(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   const typingTimeoutRef = useRef(null);
+  const fileMenuRef = useRef(null);
+  const messageMenuRef = useRef(null);
 
   const { currentUser, fetchUserInfo } = useUserStore();
-  const { chatId, user, isCurrentUserBlocked, isReceiverBlocked, changeChat, resetChat } =
-    useChatStore();
+  const {
+    chatId,
+    user,
+    isCurrentUserBlocked,
+    isReceiverBlocked,
+    changeChat,
+    resetChat,
+  } = useChatStore();
 
   const endRef = useRef(null);
 
+  // Auto scroll - skip if deleting message
   useEffect(() => {
+    if (isDeleting) return; // Don't scroll when deleting
+
     if (endRef.current) {
-      // Find the center container (scrollable area)
-      const centerContainer = endRef.current.closest('.center');
+      const centerContainer = endRef.current.closest(".center");
       if (centerContainer) {
-        // Scroll the center container, not the page
         centerContainer.scrollTo({
           top: centerContainer.scrollHeight,
-          behavior: "smooth"
+          behavior: "smooth",
         });
       } else {
-        // Fallback to scrollIntoView with constraints
-        endRef.current.scrollIntoView({ 
+        endRef.current.scrollIntoView({
           behavior: "smooth",
           block: "end",
-          inline: "nearest"
+          inline: "nearest",
         });
       }
     }
-  }, [chat?.messages]);
+  }, [chat?.messages, isDeleting]);
 
+  // Typing + message listener
   useEffect(() => {
     if (!chatId || !user?.id) return;
 
     const checkTypingStatus = (chatData) => {
-      if (!chatData) {
-        setIsTyping(false);
-        return;
-      }
+      if (!chatData) return setIsTyping(false);
 
-      if (chatData.typing && chatData.typing[user.id]) {
-        const typingTimestamp = chatData.typing[user.id];
-        let timestampMs;
-        
-        // Handle different timestamp formats
-        if (typeof typingTimestamp === 'number') {
-          timestampMs = typingTimestamp;
-        } else if (typingTimestamp && typeof typingTimestamp.toMillis === 'function') {
-          // Firestore Timestamp
-          timestampMs = typingTimestamp.toMillis();
-        } else if (typingTimestamp && typingTimestamp.seconds) {
-          // Firestore Timestamp with seconds property
-          timestampMs = typingTimestamp.seconds * 1000;
-        } else {
-          setIsTyping(false);
-          return;
-        }
-        
-        const now = Date.now();
-        // Consider typing if timestamp is within last 4 seconds (account for network delays)
-        const timeDiff = now - timestampMs;
-        if (timeDiff < 4000 && timeDiff >= -1000) { // Allow 1 second negative for clock skew
-          setIsTyping(true);
-        } else {
-          setIsTyping(false);
-        }
-      } else {
-        setIsTyping(false);
-      }
+      const receiverTyping = chatData.typing?.[user.id];
+      if (!receiverTyping) return setIsTyping(false);
+
+      let timestampMs;
+
+      if (typeof receiverTyping === "number") {
+        timestampMs = receiverTyping;
+      } else if (
+        receiverTyping &&
+        typeof receiverTyping.toMillis === "function"
+      ) {
+        timestampMs = receiverTyping.toMillis();
+      } else if (receiverTyping?.seconds) {
+        timestampMs = receiverTyping.seconds * 1000;
+      } else return setIsTyping(false);
+
+      const now = Date.now();
+      const diff = now - timestampMs;
+
+      setIsTyping(diff < 4000 && diff >= -1000);
     };
 
-    const unSub = onSnapshot(doc(db, "chats", chatId), (res) => {
-      const chatData = res.data();
-      setChat(chatData);
-      checkTypingStatus(chatData);
-    });
+    const unsub = onSnapshot(
+      doc(db, "chats", chatId),
+      (res) => {
+        const chatData = res.data();
+        console.log("📥 [Chat Listener] Received chat update:", {
+          hasMessages: !!chatData?.messages,
+          messageCount: chatData?.messages?.length || 0,
+          lastMessage: chatData?.messages?.[chatData.messages.length - 1],
+        });
+        setChat(chatData);
+        checkTypingStatus(chatData);
+      },
+      (error) => {
+        console.error("❌ [Chat Listener] Error:", error);
+      }
+    );
 
-    // Periodic check to clear stale typing indicators (every 1 second)
-    const typingCheckInterval = setInterval(() => {
-      getDoc(doc(db, "chats", chatId)).then((snapshot) => {
-        if (snapshot.exists()) {
-          const chatData = snapshot.data();
-          checkTypingStatus(chatData);
-        } else {
-          setIsTyping(false);
-        }
+    const interval = setInterval(() => {
+      getDoc(doc(db, "chats", chatId)).then((snap) => {
+        if (snap.exists()) checkTypingStatus(snap.data());
+        else setIsTyping(false);
       });
     }, 1000);
 
     return () => {
-      unSub();
-      clearInterval(typingCheckInterval);
+      unsub();
+      clearInterval(interval);
     };
   }, [chatId, user?.id]);
 
-  // Listen to receiver's user document for real-time block status updates
-  // This detects when the receiver blocks/unblocks the current user
+  // Online status and live-block update listener (receiver)
   useEffect(() => {
     if (!user?.id || !chatId) return;
 
-    const unSub = onSnapshot(doc(db, "users", user.id), async (userSnapshot) => {
-      if (!userSnapshot.exists()) return;
-      
-      const updatedUser = userSnapshot.data();
-      
-      // Get the latest currentUser from store (it should already be up to date)
-      const latestCurrentUser = useUserStore.getState().currentUser;
-      
-      if (!latestCurrentUser) return;
-      
-      // Re-check block status with updated receiver data
-      // This will check if receiver (user) has blocked currentUser
+    const unSub = onSnapshot(doc(db, "users", user.id), (snap) => {
+      if (!snap.exists()) return;
+      const updatedUser = snap.data();
+
+      // Update online status
+      setReceiverStatus({
+        isOnline: updatedUser.isOnline || false,
+        lastSeen: updatedUser.lastSeen || null,
+      });
+
+      const latestCurrent = useUserStore.getState().currentUser;
+      if (!latestCurrent) return;
+
       changeChat(chatId, updatedUser);
     });
 
-    return () => {
-      unSub();
-    };
+    return () => unSub();
   }, [user?.id, chatId, changeChat]);
 
-  // Listen to currentUser's document for real-time block status updates
-  // This detects when the current user blocks/unblocks the receiver
+  // Set current user online status with heartbeat
+  useEffect(() => {
+    if (!currentUser?.id) return;
+
+    const userRef = doc(db, "users", currentUser.id);
+
+    // Set online when component mounts
+    updateDoc(userRef, {
+      isOnline: true,
+      lastSeen: new Date(),
+    });
+
+    // Update lastSeen every 30 seconds (heartbeat)
+    const heartbeatInterval = setInterval(() => {
+      updateDoc(userRef, {
+        isOnline: true,
+        lastSeen: new Date(),
+      });
+    }, 30000);
+
+    // Set offline when component unmounts or user changes
+    return () => {
+      clearInterval(heartbeatInterval);
+      updateDoc(userRef, {
+        isOnline: false,
+        lastSeen: new Date(),
+      });
+    };
+  }, [currentUser?.id]);
+
+  // Mark messages as seen when chat is opened
+  useEffect(() => {
+    if (!chatId || !currentUser?.id || !chat?.messages) return;
+
+    const markAsSeen = async () => {
+      const chatRef = doc(db, "chats", chatId);
+      const chatSnap = await getDoc(chatRef);
+
+      if (!chatSnap.exists()) return;
+
+      const messages = chatSnap.data().messages || [];
+      let hasUnseen = false;
+
+      const updatedMessages = messages.map((msg) => {
+        if (
+          msg.senderId !== currentUser.id &&
+          !msg.seenBy?.includes(currentUser.id)
+        ) {
+          hasUnseen = true;
+          return {
+            ...msg,
+            seenBy: [...(msg.seenBy || []), currentUser.id],
+          };
+        }
+        return msg;
+      });
+
+      if (hasUnseen) {
+        await updateDoc(chatRef, { messages: updatedMessages });
+      }
+    };
+
+    markAsSeen();
+  }, [chatId, currentUser?.id, chat?.messages]);
+
+  // Live-block update listener (current user)
   useEffect(() => {
     if (!currentUser?.id || !user?.id || !chatId) return;
 
-    const unSub = onSnapshot(doc(db, "users", currentUser.id), async (currentUserSnapshot) => {
-      if (!currentUserSnapshot.exists()) return;
-      
-      // Refresh currentUser in the store to get latest blocked array
+    const unSub = onSnapshot(doc(db, "users", currentUser.id), async (snap) => {
+      if (!snap.exists()) return;
+
       await fetchUserInfo(currentUser.id);
-      
-      // Get the latest user from chatStore
-      const latestUser = useChatStore.getState().user;
-      
-      if (!latestUser) return;
-      
-      // Re-check block status with updated currentUser data
-      // This will check if currentUser has blocked the receiver (user)
-      changeChat(chatId, latestUser);
+      const latestReceiver = useChatStore.getState().user;
+      if (!latestReceiver) return;
+
+      changeChat(chatId, latestReceiver);
     });
 
-    return () => {
-      unSub();
-    };
+    return () => unSub();
   }, [currentUser.id, user?.id, chatId, fetchUserInfo, changeChat]);
 
-  const handleEmoji = (e) => {
-    const newText = text + e.emoji;
-    handleTyping(newText);
-    setOpen(false);
-  };
-
-  const handleImg = (e) => {
-    if (e.target.files[0]) {
-      setImg({
-        file: e.target.files[0],
-        url: URL.createObjectURL(e.target.files[0]),
-      });
-    }
-  };
-
-  // Update typing status in Firebase
-  const updateTypingStatus = async (isUserTyping) => {
+  // Typing handlers
+  const updateTypingStatus = async (typing) => {
     if (!chatId || !currentUser?.id) return;
 
     try {
       const chatRef = doc(db, "chats", chatId);
-      if (isUserTyping) {
-        // Use client timestamp for more reliable comparison
-        await updateDoc(chatRef, {
-          [`typing.${currentUser.id}`]: Date.now(),
-        });
+      if (typing) {
+        await updateDoc(chatRef, { [`typing.${currentUser.id}`]: Date.now() });
       } else {
-        // Remove typing status
-        const chatSnap = await getDoc(chatRef);
-        if (chatSnap.exists()) {
-          const chatData = chatSnap.data();
-          if (chatData.typing && chatData.typing[currentUser.id]) {
-            const updatedTyping = { ...chatData.typing };
-            delete updatedTyping[currentUser.id];
-            
-            // If typing object is empty, set it to empty object, otherwise update with remaining keys
-            if (Object.keys(updatedTyping).length === 0) {
-              await updateDoc(chatRef, {
-                typing: {},
-              });
-            } else {
-              await updateDoc(chatRef, {
-                typing: updatedTyping,
-              });
-            }
-          }
-        }
+        const snap = await getDoc(chatRef);
+        if (!snap.exists()) return;
+
+        const data = snap.data();
+        const updatedTyping = { ...(data.typing || {}) };
+        delete updatedTyping[currentUser.id];
+
+        await updateDoc(chatRef, { typing: updatedTyping });
       }
     } catch (err) {
-      console.log("Error updating typing status:", err);
+      console.log("Typing update error:", err);
     }
   };
 
-  // Handle typing with debounce
   const handleTyping = (value) => {
     setText(value);
 
-    // Clear existing timeout
-    if (typingTimeoutRef.current) {
-      clearTimeout(typingTimeoutRef.current);
-    }
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
 
-    // Update typing status
     if (value.trim() !== "" && !isCurrentUserBlocked && !isReceiverBlocked) {
       updateTypingStatus(true);
-    } else {
-      // Clear typing if input is empty
-      updateTypingStatus(false);
-    }
+    } else updateTypingStatus(false);
 
-    // Clear typing status after 2 seconds of no typing
     typingTimeoutRef.current = setTimeout(() => {
       updateTypingStatus(false);
     }, 2000);
   };
 
-  const handleSend = async () => {
-    if (text === "") return;
+  // FILE INPUT HANDLER
+  const handleFile = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
 
-    // Clear typing status
-    updateTypingStatus(false);
-    if (typingTimeoutRef.current) {
-      clearTimeout(typingTimeoutRef.current);
+    setFileData({
+      file,
+      previewUrl:
+        file.type && file.type.startsWith("image/")
+          ? URL.createObjectURL(file)
+          : "",
+    });
+    setShowFileMenu(false);
+    // Reset input so same file can be selected again
+    e.target.value = "";
+  };
+
+  // Handle image selection
+  const handleImageSelect = () => {
+    const input = document.getElementById("file-image");
+    if (input) input.click();
+  };
+
+  // Handle document selection
+  const handleDocumentSelect = () => {
+    const input = document.getElementById("file-document");
+    if (input) input.click();
+  };
+
+  // Close file menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (
+        fileMenuRef.current &&
+        !fileMenuRef.current.contains(event.target) &&
+        !event.target.closest(".file-menu-trigger")
+      ) {
+        setShowFileMenu(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  // SEND MESSAGE (TEXT + ANY FILE)
+  const handleSend = async () => {
+    // Validation
+    if (!text && !fileData.file) {
+      console.log("❌ Cannot send: No text and no file");
+      return;
     }
 
-    let imgUrl = null;
+    if (!chatId) {
+      console.error("❌ Cannot send: No chatId");
+      alert("Error: No chat selected");
+      return;
+    }
+
+    if (!currentUser?.id) {
+      console.error("❌ Cannot send: No currentUser");
+      alert("Error: User not logged in");
+      return;
+    }
+
+    if (!user?.id) {
+      console.error("❌ Cannot send: No receiver user");
+      alert("Error: No receiver selected");
+      return;
+    }
+
+    console.log("📤 Starting send process...", {
+      hasText: !!text,
+      hasFile: !!fileData.file,
+      fileName: fileData.file?.name,
+      fileType: fileData.file?.type,
+      fileSize: fileData.file?.size,
+      chatId,
+      currentUserId: currentUser.id,
+      receiverId: user.id,
+    });
+
+    updateTypingStatus(false);
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+
+    // Store file reference BEFORE clearing state
+    const fileToUpload = fileData.file;
+    const previewUrlToRevoke = fileData.previewUrl;
+    const textToSend = text;
+
+    // Set uploading state and clear preview immediately
+    setIsUploading(true);
+    setFileData({ file: null, previewUrl: "" });
+    if (previewUrlToRevoke) {
+      URL.revokeObjectURL(previewUrlToRevoke);
+    }
+
+    let uploadedFile = null;
 
     try {
-      if (img.file) {
-        imgUrl = await upload(img.file);
+      // Upload file if present
+      if (fileToUpload) {
+        console.log("📁 Uploading file:", fileToUpload.name, fileToUpload.type);
+        uploadedFile = await upload(fileToUpload); // returns {url,name,type,size}
+        console.log("✅ File uploaded successfully:", uploadedFile);
       }
 
-      await updateDoc(doc(db, "chats", chatId), {
-        messages: arrayUnion({
-          senderId: currentUser.id,
-          text,
-          createdAt: new Date(),
-          ...(imgUrl && { img: imgUrl }),
-        }),
+      // Prepare message object
+      // Note: Use Date() instead of serverTimestamp() because serverTimestamp()
+      // cannot be used inside arrayUnion(). Firestore will convert Date to Timestamp automatically.
+      const messageObj = {
+        senderId: currentUser.id,
+        text: textToSend || "",
+        createdAt: new Date(),
+        seenBy: [],
+        ...(uploadedFile && { file: uploadedFile }),
+      };
+
+      console.log(
+        "💬 Sending message to Firestore:",
+        JSON.stringify(messageObj, null, 2)
+      );
+      console.log("💬 Chat document path: chats/" + chatId);
+
+      // Verify chat document exists first
+      const chatDocRef = doc(db, "chats", chatId);
+      const chatDocSnap = await getDoc(chatDocRef);
+
+      if (!chatDocSnap.exists()) {
+        throw new Error(`Chat document does not exist: ${chatId}`);
+      }
+
+      console.log("✅ Chat document exists, adding message...");
+
+      // Add message to chat
+      await updateDoc(chatDocRef, {
+        messages: arrayUnion(messageObj),
       });
 
-      const userIDs = [currentUser.id, user.id];
+      console.log("✅ Message added to chat successfully");
 
-      userIDs.forEach(async (id) => {
-        const userChatsRef = doc(db, "userchats", id);
-        const userChatsSnapshot = await getDoc(userChatsRef);
+      // Verify message was added
+      const verifySnap = await getDoc(chatDocRef);
+      const verifyMessages = verifySnap.data()?.messages || [];
+      console.log(
+        `✅ Verification: Chat now has ${verifyMessages.length} messages`
+      );
+      console.log(
+        "✅ Last message:",
+        verifyMessages[verifyMessages.length - 1]
+      );
 
-        if (userChatsSnapshot.exists()) {
-          const userChatsData = userChatsSnapshot.data();
+      // Update lastMessage for both users
+      const ids = [currentUser.id, user.id];
+      console.log("🔄 Updating lastMessage for users:", ids);
 
-          const chatIndex = userChatsData.chats.findIndex(
-            (c) => c.chatId === chatId
-          );
+      await Promise.all(
+        ids.map(async (id) => {
+          try {
+            const ref = doc(db, "userchats", id);
+            const snap = await getDoc(ref);
 
-          userChatsData.chats[chatIndex].lastMessage = text;
-          userChatsData.chats[chatIndex].isSeen =
-            id === currentUser.id ? true : false;
-          userChatsData.chats[chatIndex].updatedAt = Date.now();
+            if (snap.exists()) {
+              const data = snap.data();
+              const i = data.chats.findIndex((c) => c.chatId === chatId);
 
-          await updateDoc(userChatsRef, {
-            chats: userChatsData.chats,
-          });
-        }
-      });
+              if (i !== -1) {
+                data.chats[i].lastMessage =
+                  textToSend || uploadedFile?.name || "File";
+                data.chats[i].isSeen = id === currentUser.id;
+                data.chats[i].updatedAt = Date.now();
+
+                await updateDoc(ref, { chats: data.chats });
+                console.log(`✅ Updated lastMessage for user: ${id}`);
+              } else {
+                console.warn(`⚠️ Chat not found in userchats for user: ${id}`);
+              }
+            } else {
+              console.warn(`⚠️ userchats document not found for user: ${id}`);
+            }
+          } catch (userChatErr) {
+            console.error(
+              `❌ Error updating userchats for ${id}:`,
+              userChatErr
+            );
+          }
+        })
+      );
+
+      console.log("🎉 Message sent successfully!");
     } catch (err) {
-      console.log(err);
-    } finally {
-      setImg({
-        file: null,
-        url: "",
+      console.error("❌ Error sending message:", err);
+      console.error("Error details:", {
+        message: err.message,
+        code: err.code,
+        stack: err.stack,
+        name: err.name,
       });
 
+      // Restore file data on error so user can retry
+      if (fileToUpload) {
+        const newPreviewUrl = fileToUpload.type?.startsWith("image/")
+          ? URL.createObjectURL(fileToUpload)
+          : "";
+        setFileData({
+          file: fileToUpload,
+          previewUrl: newPreviewUrl,
+        });
+      }
+
+      alert(
+        `Failed to send message: ${
+          err.message || "Unknown error"
+        }\n\nCheck console for details.`
+      );
+    } finally {
+      // Clear file data and text
+      setFileData({ file: null, previewUrl: "" });
       setText("");
+      setIsUploading(false);
+      console.log("🧹 Cleaned up file preview and text input");
     }
   };
 
-  // Cleanup typing status on unmount
   useEffect(() => {
     return () => {
-      if (typingTimeoutRef.current) {
-        clearTimeout(typingTimeoutRef.current);
-      }
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
       updateTypingStatus(false);
     };
   }, [chatId]);
 
-  // Close emoji picker when blocked
   useEffect(() => {
-    if (isCurrentUserBlocked || isReceiverBlocked) {
-      setOpen(false);
-    }
+    if (isCurrentUserBlocked || isReceiverBlocked) setOpen(false);
   }, [isCurrentUserBlocked, isReceiverBlocked]);
 
-  const handleBack = () => {
-    resetChat();
+  const handleBack = () => resetChat();
+
+  // Helper function to format last seen
+  const formatLastSeen = (lastSeen) => {
+    if (!lastSeen) return "";
+    let lastSeenDate;
+    if (lastSeen?.toDate) {
+      lastSeenDate = lastSeen.toDate();
+    } else if (lastSeen instanceof Date) {
+      lastSeenDate = lastSeen;
+    } else if (lastSeen?.seconds) {
+      lastSeenDate = new Date(lastSeen.seconds * 1000);
+    } else {
+      lastSeenDate = new Date(lastSeen);
+    }
+    return format(lastSeenDate);
   };
 
+  // Delete message handler
+  const handleDeleteMessage = async (
+    messageIndex,
+    deleteForEveryone = false
+  ) => {
+    if (!chatId || !currentUser?.id) return;
+
+    setIsDeleting(true); // Prevent auto-scroll
+    try {
+      const chatRef = doc(db, "chats", chatId);
+      const chatSnap = await getDoc(chatRef);
+
+      if (!chatSnap.exists()) return;
+
+      const messages = chatSnap.data().messages || [];
+      const message = messages[messageIndex];
+
+      // Check if user can delete (must be sender or delete for everyone)
+      if (message.senderId !== currentUser.id && !deleteForEveryone) {
+        alert("You can only delete your own messages");
+        return;
+      }
+
+      if (deleteForEveryone && message.senderId === currentUser.id) {
+        // Delete for everyone - remove from messages array
+        const updatedMessages = messages.filter(
+          (_, idx) => idx !== messageIndex
+        );
+        await updateDoc(chatRef, { messages: updatedMessages });
+      } else {
+        // Delete for me - add to deletedFor array
+        const updatedMessages = messages.map((msg, idx) => {
+          if (idx === messageIndex) {
+            return {
+              ...msg,
+              deletedFor: [...(msg.deletedFor || []), currentUser.id],
+            };
+          }
+          return msg;
+        });
+        await updateDoc(chatRef, { messages: updatedMessages });
+      }
+
+      setShowMessageMenu(null);
+    } catch (err) {
+      console.error("Error deleting message:", err);
+      alert("Failed to delete message");
+    } finally {
+      // Re-enable auto-scroll after a short delay
+      setTimeout(() => {
+        setIsDeleting(false);
+      }, 500);
+    }
+  };
+
+  // Close message menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (
+        messageMenuRef.current &&
+        !messageMenuRef.current.contains(event.target) &&
+        !event.target.closest(".message")
+      ) {
+        setShowMessageMenu(null);
+      }
+    };
+
+    if (showMessageMenu !== null) {
+      document.addEventListener("mousedown", handleClickOutside);
+      return () =>
+        document.removeEventListener("mousedown", handleClickOutside);
+    }
+  }, [showMessageMenu]);
+
   return (
-    <div className={`chat ${chatId ? 'mobile-visible' : ''}`}>
+    <div className={`chat ${chatId ? "mobile-visible" : ""}`}>
       <div className="top">
         <div className="user">
-          <button className="back-button" onClick={handleBack} aria-label="Back">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M19 12H5M12 19l-7-7 7-7"/>
+          <button className="back-button" onClick={handleBack}>
+            <svg width="24" height="24" stroke="currentColor" strokeWidth="2">
+              <path d="M19 12H5M12 19l-7-7 7-7" />
             </svg>
           </button>
+
           <img src={user?.avatar || "./avatar.png"} alt="" />
+
           <div className="texts">
             <span>{user?.username}</span>
-            <p>{isTyping ? "typing..." : ""}</p>
+            <p>
+              {isTyping
+                ? "typing..."
+                : receiverStatus.isOnline
+                ? "online"
+                : receiverStatus.lastSeen
+                ? `last seen ${formatLastSeen(receiverStatus.lastSeen)}`
+                : ""}
+            </p>
           </div>
         </div>
+
         <div className="icons">
-          <img src="./phone.png" alt="" />
-          <img src="./video.png" alt="" />
-          <img 
-            src="./info.png" 
-            alt="" 
-            onClick={() => {
-              // Toggle detail panel on mobile
-              const detailPanel = document.querySelector('.detail');
-              if (detailPanel) {
-                detailPanel.classList.toggle('mobile-visible');
-              }
-            }}
-            style={{ cursor: 'pointer' }}
+          <img
+            src="./info.png"
+            alt=""
+            className="info-icon"
+            onClick={() =>
+              document
+                .querySelector(".detail")
+                ?.classList.toggle("mobile-visible")
+            }
           />
         </div>
       </div>
+
       <div className="center">
-        {chat?.messages?.map((message) => (
-          <div
-            className={
-              message.senderId === currentUser?.id ? "message own" : "message"
-            }
-            key={message?.createAt}
-          >
-            <div className="texts">
-              {message.img && <img src={message.img} alt="" />}
-              <p>{message.text}</p>
-              <span>{format(message.createdAt.toDate())}</span>
-            </div>
-          </div>
-        ))}
-        {img.url && (
+        {chat?.messages
+          ?.filter((msg) => !msg.deletedFor?.includes(currentUser?.id))
+          ?.map((message, index) => {
+            const isOwnMessage = message.senderId === currentUser?.id;
+            const isSeen = isOwnMessage && message.seenBy?.includes(user?.id);
+            const isDelivered = isOwnMessage && message.seenBy?.length > 0;
+
+            return (
+              <div
+                className={`message ${isOwnMessage ? "own" : ""}`}
+                key={index}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  setShowMessageMenu(index);
+                }}
+              >
+                <div className="texts">
+                  {/* IMAGE FILE */}
+                  {message.file &&
+                    (message.file.type?.startsWith("image/") ||
+                      (!message.file.type &&
+                        /\.(jpg|jpeg|png|gif|webp|bmp|svg)$/i.test(
+                          message.file.name
+                        ))) && <img src={message.file.url} alt="" />}
+
+                  {/* ANY OTHER FILE */}
+                  {message.file &&
+                    !message.file.type?.startsWith("image/") &&
+                    !(
+                      !message.file.type &&
+                      /\.(jpg|jpeg|png|gif|webp|bmp|svg)$/i.test(
+                        message.file.name
+                      )
+                    ) && (
+                      <a
+                        href={message.file.url}
+                        download={message.file.name}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="file-download"
+                      >
+                        <span className="file-icon">📎</span>
+                        <span className="file-name">{message.file.name}</span>
+                      </a>
+                    )}
+
+                  {/* TEXT */}
+                  {message.text && <p>{message.text}</p>}
+
+                  <div className="message-footer">
+                    <span>
+                      {message.createdAt?.toDate
+                        ? format(message.createdAt.toDate())
+                        : message.createdAt instanceof Date
+                        ? format(message.createdAt)
+                        : message.createdAt?.seconds
+                        ? format(new Date(message.createdAt.seconds * 1000))
+                        : ""}
+                    </span>
+                    {isOwnMessage && (
+                      <span className="message-status">
+                        {isSeen ? (
+                          <svg
+                            width="16"
+                            height="16"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                          >
+                            <path d="M20 6L9 17l-5-5" />
+                            <path d="M20 12L9 23l-5-5" />
+                          </svg>
+                        ) : isDelivered ? (
+                          <svg
+                            width="16"
+                            height="16"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                          >
+                            <path d="M20 6L9 17l-5-5" />
+                            <path d="M20 12L9 23l-5-5" />
+                          </svg>
+                        ) : (
+                          <svg
+                            width="16"
+                            height="16"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                          >
+                            <path d="M20 6L9 17l-5-5" />
+                          </svg>
+                        )}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Message Context Menu - styled like file menu */}
+                {showMessageMenu === index && (
+                  <div
+                    className="message-menu"
+                    ref={messageMenuRef}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {isOwnMessage && (
+                      <div
+                        className="message-menu-item delete-everyone"
+                        onClick={() => handleDeleteMessage(index, true)}
+                      >
+                        <svg
+                          width="20"
+                          height="20"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                        >
+                          <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                        </svg>
+                        <span>Delete for everyone</span>
+                      </div>
+                    )}
+                    <div
+                      className="message-menu-item delete-me"
+                      onClick={() => handleDeleteMessage(index, false)}
+                    >
+                      <svg
+                        width="20"
+                        height="20"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                      >
+                        <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                      </svg>
+                      <span>Delete for me</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+
+        {/* PREVIEW BEFORE SENDING - IMAGE */}
+        {fileData.previewUrl && !isUploading && (
           <div className="message own">
             <div className="texts">
-              <img src={img.url} alt="" />
+              <img src={fileData.previewUrl} alt="" />
             </div>
           </div>
         )}
+
+        {/* PREVIEW BEFORE SENDING - NON-IMAGE */}
+        {fileData.file && !fileData.previewUrl && !isUploading && (
+          <div className="message own">
+            <div className="texts">
+              <div className="file-preview">
+                <span className="file-icon">📎</span>
+                <span className="file-name">{fileData.file.name}</span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* UPLOADING INDICATOR */}
+        {isUploading && (
+          <div className="message own">
+            <div className="texts">
+              <div className="uploading-indicator">
+                <span>⏳ Uploading file...</span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* LIVE TYPING INDICATOR */}
         {isTyping && !isCurrentUserBlocked && !isReceiverBlocked && (
           <div className="message typing-message">
             <div className="texts">
@@ -389,28 +833,124 @@ const Chat = () => {
             </div>
           </div>
         )}
+
         <div ref={endRef}></div>
       </div>
+
       <div className="bottom">
         <div className="icons">
-          <label 
-            htmlFor="file"
-            style={{ 
-              cursor: isCurrentUserBlocked || isReceiverBlocked ? "not-allowed" : "pointer",
-              opacity: isCurrentUserBlocked || isReceiverBlocked ? 0.5 : 1
-            }}
-          >
-            <img src="./img.png" alt="" />
-          </label>
-          <input
-            type="file"
-            id="file"
-            style={{ display: "none" }}
-            onChange={handleImg}
-            disabled={isCurrentUserBlocked || isReceiverBlocked}
-          />
-          {/* <img src="./camera.png" alt="" />
-          <img src="./mic.png" alt="" /> */}
+          {/* + Icon with File Menu */}
+          <div className="file-menu-container">
+            <button
+              className="file-menu-trigger"
+              onClick={() =>
+                !isCurrentUserBlocked &&
+                !isReceiverBlocked &&
+                setShowFileMenu(!showFileMenu)
+              }
+              disabled={isCurrentUserBlocked || isReceiverBlocked}
+              type="button"
+            >
+              <svg
+                width="24"
+                height="24"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <line x1="12" y1="5" x2="12" y2="19"></line>
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+              </svg>
+            </button>
+
+            {/* File Menu Dropdown */}
+            {showFileMenu && (
+              <div className="file-menu" ref={fileMenuRef}>
+                <div
+                  className="file-menu-item"
+                  onClick={handleImageSelect}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      handleImageSelect();
+                    }
+                  }}
+                >
+                  <svg
+                    width="20"
+                    height="20"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                  >
+                    <rect
+                      x="3"
+                      y="3"
+                      width="18"
+                      height="18"
+                      rx="2"
+                      ry="2"
+                    ></rect>
+                    <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                    <polyline points="21 15 16 10 5 21"></polyline>
+                  </svg>
+                  <span>Image</span>
+                </div>
+                <div
+                  className="file-menu-item"
+                  onClick={handleDocumentSelect}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      handleDocumentSelect();
+                    }
+                  }}
+                >
+                  <svg
+                    width="20"
+                    height="20"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                  >
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                    <polyline points="14 2 14 8 20 8"></polyline>
+                    <line x1="16" y1="13" x2="8" y2="13"></line>
+                    <line x1="16" y1="17" x2="8" y2="17"></line>
+                    <polyline points="10 9 9 9 8 9"></polyline>
+                  </svg>
+                  <span>Document</span>
+                </div>
+              </div>
+            )}
+
+            {/* Hidden file inputs */}
+            <input
+              type="file"
+              id="file-image"
+              style={{ display: "none" }}
+              onChange={handleFile}
+              disabled={isCurrentUserBlocked || isReceiverBlocked}
+              accept="image/*"
+            />
+            <input
+              type="file"
+              id="file-document"
+              style={{ display: "none" }}
+              onChange={handleFile}
+              disabled={isCurrentUserBlocked || isReceiverBlocked}
+              accept="*"
+            />
+          </div>
         </div>
 
         <input
@@ -422,31 +962,25 @@ const Chat = () => {
           }
           value={text}
           onChange={(e) => handleTyping(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              handleSend();
-            }
-          }}
-          disabled={isCurrentUserBlocked || isReceiverBlocked}
+          onKeyDown={(e) => e.key === "Enter" && handleSend()}
         />
+
         <div className="emoji">
           <img
             src="./emoji.png"
             alt=""
-            onClick={() => {
-              if (!isCurrentUserBlocked && !isReceiverBlocked) {
-                setOpen((prev) => !prev);
-              }
-            }}
-            style={{ 
-              cursor: isCurrentUserBlocked || isReceiverBlocked ? "not-allowed" : "pointer",
-              opacity: isCurrentUserBlocked || isReceiverBlocked ? 0.5 : 1
-            }}
+            onClick={() =>
+              !isCurrentUserBlocked && !isReceiverBlocked && setOpen(!open)
+            }
           />
           <div className="picker">
-            <EmojiPicker open={open && !isCurrentUserBlocked && !isReceiverBlocked} onEmojiClick={handleEmoji} />
+            <EmojiPicker
+              open={open}
+              onEmojiClick={(e) => handleTyping(text + e.emoji)}
+            />
           </div>
         </div>
+
         <button
           className="sendButton"
           onClick={handleSend}
