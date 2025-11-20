@@ -10,6 +10,7 @@ const ChatList = () => {
   const [chats, setChats] = useState([]);
   const [addMode, setAddMode] = useState(false);
   const [input, setInput] = useState("");
+  const [unreadCounts, setUnreadCounts] = useState({});
 
   const { currentUser } = useUserStore();
   const { chatId, changeChat } = useChatStore();
@@ -40,6 +41,33 @@ const ChatList = () => {
     };
   }, [currentUser.id]);
 
+  useEffect(() => {
+    if (!currentUser?.id || chats.length === 0) return;
+
+    const unsubscribers = chats.map((chatItem) =>
+      onSnapshot(doc(db, "chats", chatItem.chatId), (snapshot) => {
+        if (!snapshot.exists()) return;
+        const messages = snapshot.data().messages || [];
+        const count = messages.reduce((acc, message) => {
+          const seenBy = message.seenBy || [];
+          const isUnseen =
+            message.senderId !== currentUser.id &&
+            !seenBy.includes(currentUser.id);
+          return isUnseen ? acc + 1 : acc;
+        }, 0);
+
+        setUnreadCounts((prev) => {
+          if (prev[chatItem.chatId] === count) return prev;
+          return { ...prev, [chatItem.chatId]: count };
+        });
+      })
+    );
+
+    return () => {
+      unsubscribers.forEach((unsub) => unsub && unsub());
+    };
+  }, [chats, currentUser.id]);
+
   const handleSelect = async (chat) => {
     const userChats = chats.map((item) => {
       const { user, ...rest } = item;
@@ -58,6 +86,7 @@ const ChatList = () => {
       await updateDoc(userChatsRef, {
         chats: userChats,
       });
+      setUnreadCounts((prev) => ({ ...prev, [chat.chatId]: 0 }));
       changeChat(chat.chatId, chat.user);
     } catch (err) {
       console.log(err);
@@ -86,33 +115,46 @@ const ChatList = () => {
           onClick={() => setAddMode((prev) => !prev)}
         />
       </div>
-      {filteredChats.map((chat) => (
-        <div
-          className="item"
-          key={chat.chatId}
-          onClick={() => handleSelect(chat)}
-          style={{
-            backgroundColor: chat?.isSeen ? "transparent" : "#5183fe",
-          }}
-        >
-          <img
-            src={
-              chat.user.blocked.includes(currentUser.id)
-                ? "./avatar.png"
-                : chat.user.avatar || "./avatar.png"
-            }
-            alt=""
-          />
-          <div className="texts">
-            <span>
-              {chat.user.blocked.includes(currentUser.id)
-                ? "User"
-                : chat.user.username}
-            </span>
-            <p>{chat.lastMessage}</p>
+      {filteredChats.map((chat) => {
+        const unreadCount = unreadCounts[chat.chatId] || 0;
+        const isUnread = unreadCount > 0;
+
+        return (
+          <div
+            className={`item ${isUnread ? "unread" : ""} ${
+              chat.chatId === chatId ? "active" : ""
+            }`}
+            key={chat.chatId}
+            onClick={() => handleSelect(chat)}
+          >
+            <img
+              src={
+                chat.user.blocked.includes(currentUser.id)
+                  ? "./avatar.png"
+                  : chat.user.avatar || "./avatar.png"
+              }
+              alt=""
+            />
+            <div className="texts">
+              <div className="texts-header">
+                <span className={isUnread ? "highlight" : ""}>
+                  {chat.user.blocked.includes(currentUser.id)
+                    ? "User"
+                    : chat.user.username}
+                </span>
+                {unreadCount > 0 && (
+                  <span className="unread-badge">
+                    {unreadCount > 99 ? "99+" : unreadCount}
+                  </span>
+                )}
+              </div>
+              <p className={isUnread ? "highlight" : ""}>
+                {chat.lastMessage || "No messages yet"}
+              </p>
+            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
 
       {addMode && <AddUser />}
     </div>

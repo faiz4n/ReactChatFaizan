@@ -47,6 +47,7 @@
     padding: 20px;
     cursor: pointer;
     border-bottom: 1px solid #dddddd35;
+    transition: background-color 0.2s ease, transform 0.2s ease;
 
     img {
       width: 50px;
@@ -59,15 +60,53 @@
       display: flex;
       flex-direction: column;
       gap: 10px;
+      width: 100%;
+
+      .texts-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+      }
 
       span {
         font-weight: 500;
+        color: #fff;
       }
 
       p {
         font-size: 14px;
         font-weight: 300;
+        color: #a0aec0;
+        word-break: break-word;
       }
+    }
+
+    .unread-badge {
+      min-width: 22px;
+      height: 22px;
+      border-radius: 999px;
+      background: #5183fe;
+      color: #fff;
+      font-size: 12px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0 6px;
+    }
+
+    &.unread {
+      background-color: rgba(81, 131, 254, 0.08);
+
+      .texts .highlight {
+        font-weight: 600;
+        color: #ffffff;
+      }
+    }
+
+    &.active {
+      background-color: rgba(81, 131, 254, 0.18);
     }
   }
 }
