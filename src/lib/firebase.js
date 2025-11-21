@@ -4,17 +4,17 @@ import { getFirestore } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyBLrVoofs1K9npmYGoGi1aJuoE4L_BD3M8",
-  authDomain: "react-chat-faizan.firebaseapp.com",
-  projectId: "react-chat-faizan",
-  storageBucket: "react-chat-faizan.firebasestorage.app",
-  messagingSenderId: "52031052240",
-  appId: "1:52031052240:web:186de31f937a9d775f01d5",
-  measurementId: "G-2LWZKX022Q",
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID,
 };
 
 const app = initializeApp(firebaseConfig);
 
-export const auth = getAuth();
-export const db = getFirestore();
-export const storage = getStorage();
+export const auth = getAuth(app);
+export const db = getFirestore(app);
+export const storage = getStorage(app);
